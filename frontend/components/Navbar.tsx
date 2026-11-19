@@ -4,7 +4,7 @@ import { useAuth } from "@/context/Authcontext";
 import { cn } from "@/lib/utils";
 import { Bell, ChevronDown, Gift, Search, X } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const AVATAR_COLORS = [
@@ -20,7 +20,6 @@ const AVATAR_COLORS = [
 
 const Navbar = () => {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const {
     user,

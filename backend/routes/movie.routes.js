@@ -1,4 +1,3 @@
-
 import express from "express";
 
 import {
@@ -10,48 +9,54 @@ import {
   incrementMovieViews,
 } from "../controllers/movie.controller.js";
 
-import protect from "../middleware/auth.middleware.js";
-import upload from "../middleware/upload.middleware.js";
+import protect, { requireAdmin } from "../middleware/auth.middleware.js";
+import upload, { verifyVideoUpload } from "../middleware/upload.middleware.js";
+import validateObjectId from "../middleware/validateObjectId.js";
 
 const router = express.Router();
 
 /*
 |--------------------------------------------------------------------------
-| PUBLIC MOVIE ROUTES
+| PUBLIC
 |--------------------------------------------------------------------------
 */
 
 router.get("/", getMovies);
-
-
-router.get("/:movieId", getMovie);
-
-router.post("/:movieId/views", incrementMovieViews);
+router.get("/:movieId", validateObjectId("movieId"), getMovie);
+router.post("/:movieId/views", validateObjectId("movieId"), incrementMovieViews);
 
 /*
 |--------------------------------------------------------------------------
-| ADMIN / PROTECTED MOVIE ROUTES
+| ADMIN ONLY
 |--------------------------------------------------------------------------
+| Order matters: check the user and the ID BEFORE multer stores any file.
 */
 
 router.post(
   "/",
   protect,
+  requireAdmin,
   upload.single("video"),
-  createMovie
+  verifyVideoUpload,
+  createMovie,
 );
 
 router.patch(
   "/:movieId",
   protect,
+  requireAdmin,
+  validateObjectId("movieId"),
   upload.single("video"),
-  updateMovie
+  verifyVideoUpload,
+  updateMovie,
 );
 
 router.delete(
   "/:movieId",
   protect,
-  deleteMovie
+  requireAdmin,
+  validateObjectId("movieId"),
+  deleteMovie,
 );
 
 export default router;

@@ -103,7 +103,14 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: loggedInUser, profiles: userProfiles };
     } catch (error) {
       console.error("Login error:", error);
-      return { success: false, message: error.message || "Login failed" };
+      // Show the server's message ("Invalid email or password"), not axios'
+      // generic "Request failed with status code 401".
+      const message = error.response
+        ? error.response.data?.message
+        : error.request
+          ? "Cannot reach the server. Please try again."
+          : error.message;
+      throw new Error(message || "Login failed");
     } finally {
       setAuthLoading(false);
     }

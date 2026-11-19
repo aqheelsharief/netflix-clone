@@ -95,6 +95,25 @@ const getVideoUrl = (videoUrl?: string) => {
 |--------------------------------------------------------------------------
 */
 
+// The mock data uses film ratings; the backend uses All / 7+ / 13+ / 16+ / 18+.
+// (Kids profiles only see "All" and "7+".)
+const RATING_TO_MATURITY: Record<string, string> = {
+  G: "All",
+  "TV-G": "All",
+  "TV-Y": "All",
+  PG: "7+",
+  "TV-PG": "7+",
+  "TV-Y7": "7+",
+  "PG-13": "13+",
+  "TV-14": "13+",
+  R: "16+",
+  "TV-MA": "18+",
+  "NC-17": "18+",
+};
+
+const maturityFromRating = (rating?: string) =>
+  RATING_TO_MATURITY[rating ?? ""] ?? "13+";
+
 const emptyForm = {
   title: "",
   description: "",
@@ -185,7 +204,9 @@ const UploadPage = () => {
       setLoadingMovies(true);
       setError("");
 
-      const response = await axiosInstance.get("/movies");
+      const response = await axiosInstance.get("/movies", {
+        params: { limit: 100 },
+      });
 
       const fetchedMovies = response.data?.movies || response.data?.data || [];
 
@@ -255,7 +276,7 @@ const UploadPage = () => {
 
       language: "English",
 
-      maturityRating: movie.rating || "13+",
+      maturityRating: maturityFromRating(movie.rating),
     });
   };
 

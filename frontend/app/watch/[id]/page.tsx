@@ -3,7 +3,7 @@
 import VideoPlayer from "@/components/VideoPlayer";
 import { useAuth } from "@/context/Authcontext";
 import axiosInstance from "@/lib/axios";
-import { getMovieById } from "@/lib/movie";
+import RequireAuth from "@/components/RequireAuth";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 type Movie = {
@@ -24,12 +24,11 @@ type Movie = {
   videoUrl: string;
 };
 
-const page = () => {
+const WatchPage = () => {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
   const { selectedProfile } = useAuth();
-  // const movie = getMovieById(id);
   const [movie, setMovie] = useState<Movie | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -44,6 +43,7 @@ const page = () => {
         if (!movie) {
           setMovie(null);
           setLoading(false);
+          return;
         }
         setMovie(movie);
         const profileid = selectedProfile?._id;
@@ -112,5 +112,11 @@ const page = () => {
     />
   );
 };
+
+const page = () => (
+  <RequireAuth requireProfile>
+    <WatchPage />
+  </RequireAuth>
+);
 
 export default page;

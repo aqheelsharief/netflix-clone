@@ -3,15 +3,17 @@ import mongoose from "mongoose";
 import Watchlist from "../models/Watchlist.js";
 import Movie from "../models/Movie.js";
 import Profile from "../models/Profile.js";
+import HttpError from "../utils/HttpError.js";
 
 /*
-|--------------------------------------------------------------------------
-| VERIFY PROFILE
-|--------------------------------------------------------------------------
+| Returns the profile only if it belongs to the logged-in user.
+| (A malformed ID counts as "not found".)
 */
-
 const getUserProfile = async (profileId, userId) => {
-  if (!mongoose.Types.ObjectId.isValid(profileId)) {
+  if (
+    typeof profileId !== "string" ||
+    !mongoose.Types.ObjectId.isValid(profileId)
+  ) {
     return null;
   }
 
@@ -22,184 +24,102 @@ const getUserProfile = async (profileId, userId) => {
   });
 };
 
+const requireProfile = async (profileId, userId) => {
+  if (!profileId) throw new HttpError(400, "profileId is required");
+
+  const profile = await getUserProfile(profileId, userId);
+  if (!profile) throw new HttpError(404, "Profile not found");
+
+  return profile;
+};
+
 /*
 |--------------------------------------------------------------------------
-| GET WATCHLIST
+| GET WATCHLIST      GET /api/watchlist?profileId=...
 |--------------------------------------------------------------------------
 */
 
 export const getWatchlist = async (req, res) => {
-  try {
-    const { profileId } = req.query;
+  const { profileId } = req.query;
+  await requireProfile(profileId, req.user._id);
 
-    if (!profileId) {
-      return res.status(400).json({
-        success: false,
-        message: "profileId is required",
-      });
-    }
+  const items = await Watchlist.find({ profile: profileId })
+    .populate("movie")
+    .sort({ addedAt: -1 });
 
-    const profile = await getUserProfile(profileId, req.user._id);
-
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: "Profile not found",
-      });
-    }
-
-    const watchlist = await Watchlist.find({
-      profile: profileId,
-    })
-      .populate("movie")
-      .sort({
-        addedAt: -1,
-      });
-
-    return res.status(200).json({
-      success: true,
-      watchlist,
-    });
-  } catch (error) {
-    console.error("Get watchlist error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch watchlist",
-    });
-  }
+  res.status(200).json({
+    success: true,
+    // Skip entries whose movie no longer exists (or was unpublished).
+    watchlist: items.filter((item) => item.movie && item.movie.isPublished),
+  });
 };
 
 /*
 |--------------------------------------------------------------------------
-| ADD MOVIE TO WATCHLIST
+| ADD TO WATCHLIST      POST /api/watchlist/:movieId   body: { profileId }
 |--------------------------------------------------------------------------
 */
 
 export const addToWatchlist = async (req, res) => {
-  try {
-    const { profileId } = req.body;
-    const { movieId } = req.params;
+  const profileId = req.body?.profileId;
+  const { movieId } = req.params;
 
-    if (!profileId) {
-      return res.status(400).json({
-        success: false,
-        message: "profileId is required",
-      });
-    }
+  await requireProfile(profileId, req.user._id);
 
-    if (!mongoose.Types.ObjectId.isValid(movieId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid movie ID",
-      });
-    }
+  const movie = await Movie.findOne({ _id: movieId, isPublished: true });
+  if (!movie) throw new HttpError(404, "Movie not found");
 
-    const profile = await getUserProfile(profileId, req.user._id);
+  const existing = await Watchlist.findOne({
+    profile: profileId,
+    movie: movieId,
+  });
 
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: "Profile not found",
-      });
-    }
-
-    const movie = await Movie.findOne({
-      _id: movieId,
-      isPublished: true,
-    });
-
-    if (!movie) {
-      return res.status(404).json({
-        success: false,
-        message: "Movie not found",
-      });
-    }
-
-    const existing = await Watchlist.findOne({
-      profile: profileId,
-      movie: movieId,
-    });
-
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: "Movie already exists in watchlist",
-        watchlistItem: existing,
-      });
-    }
-
-    const watchlistItem = await Watchlist.create({
-      profile: profileId,
-      movie: movieId,
-    });
-
-    await watchlistItem.populate("movie");
-
-    return res.status(201).json({
-      success: true,
-      message: "Movie added to watchlist",
-      watchlistItem,
-    });
-  } catch (error) {
-    console.error("Add watchlist error:", error);
-
-    return res.status(500).json({
+  if (existing) {
+    return res.status(409).json({
       success: false,
-      message: "Failed to add movie to watchlist",
+      message: "Movie already exists in watchlist",
+      watchlistItem: existing,
     });
   }
+
+  // If two requests race, the unique index rejects the second (error 11000 -> 409).
+  const watchlistItem = await Watchlist.create({
+    profile: profileId,
+    movie: movieId,
+  });
+
+  await watchlistItem.populate("movie");
+
+  res.status(201).json({
+    success: true,
+    message: "Movie added to watchlist",
+    watchlistItem,
+  });
 };
 
 /*
 |--------------------------------------------------------------------------
-| REMOVE MOVIE FROM WATCHLIST
+| REMOVE FROM WATCHLIST
+| DELETE /api/watchlist/:movieId?profileId=...
+| (a JSON body { profileId } is still accepted for the old frontend code)
 |--------------------------------------------------------------------------
 */
 
 export const removeFromWatchlist = async (req, res) => {
-  try {
-    const { profileId } = req.body;
-    const { movieId } = req.params;
+  const profileId = req.query.profileId ?? req.body?.profileId;
+  const { movieId } = req.params;
 
-    if (!profileId) {
-      return res.status(400).json({
-        success: false,
-        message: "profileId is required",
-      });
-    }
+  await requireProfile(profileId, req.user._id);
 
-    const profile = await getUserProfile(profileId, req.user._id);
+  const deleted = await Watchlist.findOneAndDelete({
+    profile: profileId,
+    movie: movieId,
+  });
 
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: "Profile not found",
-      });
-    }
+  if (!deleted) throw new HttpError(404, "Movie is not in watchlist");
 
-    const deleted = await Watchlist.findOneAndDelete({
-      profile: profileId,
-      movie: movieId,
-    });
-
-    if (!deleted) {
-      return res.status(404).json({
-        success: false,
-        message: "Movie is not in watchlist",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Movie removed from watchlist",
-    });
-  } catch (error) {
-    console.error("Remove watchlist error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to remove movie from watchlist",
-    });
-  }
+  res.status(200).json({
+    success: true,
+    message: "Movie removed from watchlist",
+  });
 };

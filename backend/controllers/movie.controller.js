@@ -1,120 +1,144 @@
-
 import Movie from "../models/Movie.js";
-import fs from "fs";
+import Watchlist from "../models/Watchlist.js";
+import HttpError from "../utils/HttpError.js";
+import { videoUrlFor, deleteVideoByUrl } from "../config/paths.js";
+
+/*
+| Express 5 sends errors from async handlers to the error middleware by itself,
+| so these controllers just `throw new HttpError(status, message)`.
+*/
+
+const MATURITY_LEVELS = ["All", "7+", "13+", "16+", "18+"];
 
 /*
 |--------------------------------------------------------------------------
-| CREATE MOVIE
+| Helpers
+|--------------------------------------------------------------------------
+*/
+
+const asString = (value) => (typeof value === "string" ? value.trim() : "");
+
+const toBool = (value) => value === true || value === "true";
+
+// Accepts ["a","b"], '["a","b"]' (JSON string) or "a, b" (comma string).
+const parseList = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value !== "string" || !value.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean);
+    }
+  } catch {
+    // not JSON, fall through to comma split
+  }
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const parseYear = (value) => {
+  const year = Number(value);
+  const maxYear = new Date().getFullYear() + 5;
+  if (!Number.isInteger(year) || year < 1888 || year > maxYear) {
+    throw new HttpError(400, "Year must be a valid year");
+  }
+  return year;
+};
+
+const parseMatch = (value) => {
+  if (value === undefined || value === null || value === "") return 0;
+  const match = Number(value);
+  if (!Number.isFinite(match) || match < 0 || match > 100) {
+    throw new HttpError(400, "Match must be a number between 0 and 100");
+  }
+  return match;
+};
+
+const parseMaturity = (value) => {
+  if (!MATURITY_LEVELS.includes(value)) {
+    throw new HttpError(
+      400,
+      `Maturity rating must be one of: ${MATURITY_LEVELS.join(", ")}`,
+    );
+  }
+  return value;
+};
+
+const parseReleaseDate = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new HttpError(400, "Release date is not a valid date");
+  }
+  return date;
+};
+
+// ?genre=a&genre=b makes Express give us an array: only accept plain strings.
+const queryString = (value) => (typeof value === "string" ? value.trim() : "");
+
+/*
+|--------------------------------------------------------------------------
+| CREATE MOVIE  (admin)
 |--------------------------------------------------------------------------
 */
 
 export const createMovie = async (req, res) => {
-  try {
-    const {
-      title,
-      description,
-      longDescription,
-      backdrop,
-      poster,
-      year,
-      rating,
-      duration,
-      genres,
-      cast,
-      match,
-      isNewRelease,
-      isTop10,
-      trailerUrl,
-      director,
-      language,
-      maturityRating,
-      releaseDate,
-    } = req.body;
+  const body = req.body ?? {};
 
-    if (!title || !description || !year || !rating || !duration) {
-      return res.status(400).json({
-        success: false,
-        message: "Title, description, year, rating and duration are required",
-      });
-    }
+  const title = asString(body.title);
+  const description = asString(body.description);
+  const rating = asString(body.rating);
+  const duration = asString(body.duration);
+  const backdrop = asString(body.backdrop);
+  const poster = asString(body.poster);
 
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Movie video is required",
-      });
-    }
-
-    const videoUrl = `/uploads/videos/${req.file.filename}`;
-
-    let parsedGenres = genres;
-    let parsedCast = cast;
-
-    if (typeof genres === "string") {
-      try {
-        parsedGenres = JSON.parse(genres);
-      } catch {
-        parsedGenres = genres
-          .split(",")
-          .map((genre) => genre.trim())
-          .filter(Boolean);
-      }
-    }
-
-    if (typeof cast === "string") {
-      try {
-        parsedCast = JSON.parse(cast);
-      } catch {
-        parsedCast = cast
-          .split(",")
-          .map((person) => person.trim())
-          .filter(Boolean);
-      }
-    }
-
-    const movie = await Movie.create({
-      title: title.trim(),
-      description: description.trim(),
-      longDescription: longDescription || "",
-      backdrop: backdrop || "",
-      poster: poster || "",
-      year: Number(year),
-      rating,
-      duration,
-      genres: parsedGenres || [],
-      cast: parsedCast || [],
-      match: Number(match) || 0,
-      isNewRelease: isNewRelease === true || isNewRelease === "true",
-      isTop10: isTop10 === true || isTop10 === "true",
-      videoUrl,
-      trailerUrl: trailerUrl || "",
-      director: director || "",
-      language: language || "English",
-      maturityRating: maturityRating || "13+",
-      releaseDate: releaseDate || null,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Movie created successfully",
-      movie,
-    });
-  } catch (error) {
-    console.error("Create movie error:", error);
-
-    if (req.file) {
-      const filePath = req.file.path;
-
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to create movie",
-    });
+  if (!title || !description || !rating || !duration || !body.year) {
+    throw new HttpError(
+      400,
+      "Title, description, year, rating and duration are required",
+    );
   }
+
+  if (!backdrop || !poster) {
+    throw new HttpError(400, "Backdrop and poster URLs are required");
+  }
+
+  if (!req.file) {
+    throw new HttpError(400, "Movie video is required");
+  }
+
+  const movie = await Movie.create({
+    title,
+    description,
+    longDescription: asString(body.longDescription),
+    backdrop,
+    poster,
+    year: parseYear(body.year),
+    rating,
+    duration,
+    genres: parseList(body.genres),
+    cast: parseList(body.cast),
+    match: parseMatch(body.match),
+    isNewRelease: toBool(body.isNewRelease),
+    isTop10: toBool(body.isTop10),
+    videoUrl: videoUrlFor(req.file.filename),
+    trailerUrl: asString(body.trailerUrl),
+    director: asString(body.director),
+    language: asString(body.language) || "English",
+    maturityRating: parseMaturity(asString(body.maturityRating) || "13+"),
+    releaseDate: parseReleaseDate(body.releaseDate),
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Movie created successfully",
+    movie,
+  });
 };
 
 /*
@@ -124,65 +148,43 @@ export const createMovie = async (req, res) => {
 */
 
 export const getMovies = async (req, res) => {
-  try {
-    const { page = 1, limit = 20, search, genre, isNewRelease, isTop10 } = req.query;
+  const search = queryString(req.query.search);
+  const genre = queryString(req.query.genre);
 
-    const pageNumber = Math.max(Number(page), 1);
-    const limitNumber = Math.min(Number(limit), 100);
+  // limit=0 would mean "no limit" in Mongo, and page=abc would be NaN: clean both.
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
 
-    const query = {
-      isPublished: true,
-    };
+  const query = { isPublished: true };
 
-    if (search) {
-      query.$text = {
-        $search: search,
-      };
-    }
+  if (search) query.$text = { $search: search };
+  if (genre) query.genres = genre;
 
-    if (genre) {
-      query.genres = genre;
-    }
-
-    if (isNewRelease !== undefined) {
-      query.isNewRelease = isNewRelease === "true";
-    }
-
-    if (isTop10 !== undefined) {
-      query.isTop10 = isTop10 === "true";
-    }
-
-    const skip = (pageNumber - 1) * limitNumber;
-
-    const [movies, total] = await Promise.all([
-      Movie.find(query)
-        .sort({
-          createdAt: -1,
-        })
-        .skip(skip)
-        .limit(limitNumber),
-
-      Movie.countDocuments(query),
-    ]);
-
-    return res.status(200).json({
-      success: true,
-      movies,
-      pagination: {
-        page: pageNumber,
-        limit: limitNumber,
-        total,
-        totalPages: Math.ceil(total / limitNumber),
-      },
-    });
-  } catch (error) {
-    console.error("Get movies error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch movies",
-    });
+  if (req.query.isNewRelease === "true" || req.query.isNewRelease === "false") {
+    query.isNewRelease = req.query.isNewRelease === "true";
   }
+  if (req.query.isTop10 === "true" || req.query.isTop10 === "false") {
+    query.isTop10 = req.query.isTop10 === "true";
+  }
+
+  const [movies, total] = await Promise.all([
+    Movie.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
+    Movie.countDocuments(query),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    movies,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  });
 };
 
 /*
@@ -192,275 +194,129 @@ export const getMovies = async (req, res) => {
 */
 
 export const getMovie = async (req, res) => {
-  try {
-    const { movieId } = req.params;
+  const movie = await Movie.findOne({
+    _id: req.params.movieId,
+    isPublished: true,
+  });
 
-    const movie = await Movie.findOne({
-      _id: movieId,
-      isPublished: true,
-    });
+  if (!movie) throw new HttpError(404, "Movie not found");
 
-    if (!movie) {
-      return res.status(404).json({
-        success: false,
-        message: "Movie not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      movie,
-    });
-  } catch (error) {
-    console.error("Get movie error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch movie",
-    });
-  }
+  res.status(200).json({ success: true, movie });
 };
 
 /*
 |--------------------------------------------------------------------------
-| UPDATE MOVIE
+| UPDATE MOVIE  (admin)
 |--------------------------------------------------------------------------
 */
 
 export const updateMovie = async (req, res) => {
-  try {
-    const { movieId } = req.params;
+  const movie = await Movie.findById(req.params.movieId);
+  if (!movie) throw new HttpError(404, "Movie not found");
 
-    const movie = await Movie.findById(movieId);
+  const body = req.body ?? {};
 
-    if (!movie) {
-      return res.status(404).json({
-        success: false,
-        message: "Movie not found",
-      });
-    }
-
-    const {
-      title,
-      description,
-      longDescription,
-      backdrop,
-      poster,
-      year,
-      rating,
-      duration,
-      genres,
-      cast,
-      match,
-      isNewRelease,
-      isTop10,
-      trailerUrl,
-      director,
-      language,
-      maturityRating,
-      isPublished,
-      releaseDate,
-    } = req.body;
-
-    if (title !== undefined) {
-      movie.title = title.trim();
-    }
-
-    if (description !== undefined) {
-      movie.description = description.trim();
-    }
-
-    if (longDescription !== undefined) {
-      movie.longDescription = longDescription;
-    }
-
-    if (backdrop !== undefined) {
-      movie.backdrop = backdrop;
-    }
-
-    if (poster !== undefined) {
-      movie.poster = poster;
-    }
-
-    if (year !== undefined) {
-      movie.year = Number(year);
-    }
-
-    if (rating !== undefined) {
-      movie.rating = rating;
-    }
-
-    if (duration !== undefined) {
-      movie.duration = duration;
-    }
-
-    if (genres !== undefined) {
-      movie.genres =
-        typeof genres === "string"
-          ? genres.split(",").map((item) => item.trim())
-          : genres;
-    }
-
-    if (cast !== undefined) {
-      movie.cast =
-        typeof cast === "string"
-          ? cast.split(",").map((item) => item.trim())
-          : cast;
-    }
-
-    if (match !== undefined) {
-      movie.match = Number(match);
-    }
-
-    if (isNewRelease !== undefined) {
-      movie.isNewRelease = isNewRelease === true || isNewRelease === "true";
-    }
-
-    if (isTop10 !== undefined) {
-      movie.isTop10 = isTop10 === true || isTop10 === "true";
-    }
-
-    if (trailerUrl !== undefined) {
-      movie.trailerUrl = trailerUrl;
-    }
-
-    if (director !== undefined) {
-      movie.director = director;
-    }
-
-    if (language !== undefined) {
-      movie.language = language;
-    }
-
-    if (maturityRating !== undefined) {
-      movie.maturityRating = maturityRating;
-    }
-
-    if (isPublished !== undefined) {
-      movie.isPublished = isPublished === true || isPublished === "true";
-    }
-
-    if (releaseDate !== undefined) {
-      movie.releaseDate = releaseDate;
-    }
-
-    // Replace video if new video uploaded
-    if (req.file) {
-      if (movie.videoUrl) {
-        const oldVideoPath = movie.videoUrl.replace(
-          "/uploads/videos/",
-          "uploads/videos/",
-        );
-
-        if (fs.existsSync(oldVideoPath)) {
-          fs.unlinkSync(oldVideoPath);
-        }
-      }
-
-      movie.videoUrl = `/uploads/videos/${req.file.filename}`;
-    }
-
-    await movie.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Movie updated successfully",
-      movie,
-    });
-  } catch (error) {
-    console.error("Update movie error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to update movie",
-    });
+  // Required text fields: if sent, they cannot be empty.
+  for (const key of [
+    "title",
+    "description",
+    "rating",
+    "duration",
+    "backdrop",
+    "poster",
+  ]) {
+    if (body[key] === undefined) continue;
+    const value = asString(body[key]);
+    if (!value) throw new HttpError(400, `${key} cannot be empty`);
+    movie[key] = value;
   }
+
+  // Optional text fields: if sent, they are stored as given.
+  for (const key of ["longDescription", "trailerUrl", "director"]) {
+    if (body[key] !== undefined) movie[key] = asString(body[key]);
+  }
+  if (body.language !== undefined) {
+    movie.language = asString(body.language) || "English";
+  }
+
+  if (body.year !== undefined) movie.year = parseYear(body.year);
+  if (body.match !== undefined) movie.match = parseMatch(body.match);
+  if (body.genres !== undefined) movie.genres = parseList(body.genres);
+  if (body.cast !== undefined) movie.cast = parseList(body.cast);
+  if (body.maturityRating !== undefined) {
+    movie.maturityRating = parseMaturity(asString(body.maturityRating));
+  }
+  if (body.releaseDate !== undefined) {
+    movie.releaseDate = parseReleaseDate(body.releaseDate);
+  }
+  if (body.isNewRelease !== undefined) {
+    movie.isNewRelease = toBool(body.isNewRelease);
+  }
+  if (body.isTop10 !== undefined) movie.isTop10 = toBool(body.isTop10);
+  if (body.isPublished !== undefined) {
+    movie.isPublished = toBool(body.isPublished);
+  }
+
+  let oldVideoUrl = null;
+  if (req.file) {
+    oldVideoUrl = movie.videoUrl;
+    movie.videoUrl = videoUrlFor(req.file.filename);
+  }
+
+  await movie.save();
+
+  // Only delete the old video AFTER the save worked, so a failed save never
+  // leaves the database pointing at a file that no longer exists.
+  if (oldVideoUrl) await deleteVideoByUrl(oldVideoUrl);
+
+  res.status(200).json({
+    success: true,
+    message: "Movie updated successfully",
+    movie,
+  });
 };
 
 /*
 |--------------------------------------------------------------------------
-| DELETE MOVIE
+| DELETE MOVIE  (admin)
 |--------------------------------------------------------------------------
 */
 
 export const deleteMovie = async (req, res) => {
-  try {
-    const { movieId } = req.params;
+  const { movieId } = req.params;
 
-    const movie = await Movie.findById(movieId);
+  const movie = await Movie.findById(movieId);
+  if (!movie) throw new HttpError(404, "Movie not found");
 
-    if (!movie) {
-      return res.status(404).json({
-        success: false,
-        message: "Movie not found",
-      });
-    }
+  // Remove the movie and every watchlist entry pointing at it,
+  // otherwise users' lists would contain broken (null) items.
+  await Promise.all([
+    Movie.deleteOne({ _id: movieId }),
+    Watchlist.deleteMany({ movie: movieId }),
+  ]);
 
-    // Delete video from filesystem
-    if (movie.videoUrl) {
-      const videoPath = movie.videoUrl.replace(
-        "/uploads/videos/",
-        "uploads/videos/",
-      );
+  await deleteVideoByUrl(movie.videoUrl);
 
-      if (fs.existsSync(videoPath)) {
-        fs.unlinkSync(videoPath);
-      }
-    }
-
-    await Movie.findByIdAndDelete(movieId);
-
-    return res.status(200).json({
-      success: true,
-      message: "Movie deleted successfully",
-    });
-  } catch (error) {
-    console.error("Delete movie error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to delete movie",
-    });
-  }
+  res.status(200).json({
+    success: true,
+    message: "Movie deleted successfully",
+  });
 };
 
+/*
+|--------------------------------------------------------------------------
+| INCREMENT VIEWS
+|--------------------------------------------------------------------------
+*/
 
 export const incrementMovieViews = async (req, res) => {
-  try {
-    const { movieId } = req.params;
+  const movie = await Movie.findOneAndUpdate(
+    { _id: req.params.movieId, isPublished: true },
+    { $inc: { views: 1 } },
+    { new: true },
+  );
 
-    const movie = await Movie.findOneAndUpdate(
-      {
-        _id: movieId,
-        isPublished: true,
-      },
-      {
-        $inc: {
-          views: 1,
-        },
-      },
-      {
-        new: true,
-      },
-    );
+  if (!movie) throw new HttpError(404, "Movie not found");
 
-    if (!movie) {
-      return res.status(404).json({
-        success: false,
-        message: "Movie not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      views: movie.views,
-    });
-  } catch (error) {
-    console.error("Increment views error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to update movie views",
-    });
-  }
+  res.status(200).json({ success: true, views: movie.views });
 };

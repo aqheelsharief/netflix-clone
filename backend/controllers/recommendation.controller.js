@@ -394,7 +394,7 @@ export const searchRecommendations = async (req, res) => {
   try {
     const { q, profileId } = req.query;
 
-    if (!q || !q.trim()) {
+    if (typeof q !== "string" || !q.trim()) {
       return res.status(400).json({
         success: false,
         message: "Search query is required",
@@ -415,7 +415,7 @@ export const searchRecommendations = async (req, res) => {
       });
     }
 
-    const searchQuery = q.trim();
+    const searchQuery = q.trim().slice(0, 100);
 
     const profile = await getProfile(profileId, req.user._id);
 
@@ -428,21 +428,12 @@ export const searchRecommendations = async (req, res) => {
 
     const context = await getRecommendationContext(profileId);
 
-    const watchlistIds = context.watchlist.map((movie) => movie.id);
-
     let candidates = await Movie.find({
       $text: {
         $search: searchQuery,
       },
 
       isPublished: true,
-
-      /*
-      | Don't show movies already in Watchlist
-      */
-      _id: {
-        $nin: watchlistIds,
-      },
 
       /*
       | Kids profile restriction
@@ -499,10 +490,6 @@ export const searchRecommendations = async (req, res) => {
 
       candidates = await Movie.find({
         isPublished: true,
-
-        _id: {
-          $nin: watchlistIds,
-        },
 
         $or: [
           {
@@ -622,7 +609,6 @@ IMPORTANT RULES:
 - ONLY use movies from AVAILABLE MOVIES.
 - NEVER invent movie IDs.
 - NEVER return movies that are not in AVAILABLE MOVIES.
-- NEVER return movies already in the Watchlist.
 - Rank movies that best satisfy the user's search query.
 - Use the Watchlist only as a personalization signal.
 - Do not ignore the search query just because of Watchlist preferences.
@@ -751,9 +737,16 @@ ${JSON.stringify(
       candidates.map((movie) => [movie._id.toString(), movie]),
     );
 
-    const movies = (result.movieIds || [])
+    // AI order first (no duplicates), then every other match, so the AI
+    // can never make real search results disappear.
+    const ranked = [...new Set(result.movieIds || [])]
       .map((id) => movieMap.get(id))
       .filter(Boolean);
+    const rankedIds = new Set(ranked.map((movie) => movie._id.toString()));
+    const movies = [
+      ...ranked,
+      ...candidates.filter((movie) => !rankedIds.has(movie._id.toString())),
+    ];
 
     /*
     |--------------------------------------------------------------------------

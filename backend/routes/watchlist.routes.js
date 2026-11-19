@@ -7,15 +7,19 @@ import {
 } from "../controllers/watchlist.controller.js";
 
 import protect from "../middleware/auth.middleware.js";
+import validateObjectId from "../middleware/validateObjectId.js";
 
 const router = express.Router();
 
 router.use(protect);
 
+// GET    /api/watchlist?profileId=...
 router.get("/", getWatchlist);
 
-router.post("/:movieId", addToWatchlist);
+// POST   /api/watchlist/:movieId        body: { profileId }
+router.post("/:movieId", validateObjectId("movieId"), addToWatchlist);
 
-router.delete("/:movieId", removeFromWatchlist);
+// DELETE /api/watchlist/:movieId?profileId=...   (body { profileId } also works)
+router.delete("/:movieId", validateObjectId("movieId"), removeFromWatchlist);
 
 export default router;

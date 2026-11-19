@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/context/Authcontext";
 import axiosInstance from "@/lib/axios";
-import { profiles as initialProfiles, type Profile } from "@/lib/profiles";
+import RequireAuth from "@/components/RequireAuth";
 import { cn } from "@/lib/utils";
 import { Check, Pencil, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -19,15 +19,11 @@ const AVATAR_COLORS = [
   "bg-gradient-to-br from-indigo-500 to-violet-600",
 ];
 
-type LocalProfile = Profile & { color?: string };
-
 const MAX_PROFILES = 5;
-const page = () => {
+const ProfilesPage = () => {
   const { user, profiles, setProfiles, selectProfile } = useAuth();
   const router = useRouter();
   const [profileList, setProfileList] = useState<any[]>([]);
-  // const [profileList, setProfileList] =
-  //   useState<LocalProfile[]>(initialProfiles);
   const [managing, setManaging] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -85,15 +81,20 @@ const page = () => {
       const updatedProfile = [...profileList, createdProfile.profile];
       setProfileList(updatedProfile);
       setProfiles(updatedProfile);
-    } catch (error) {
-      console.error("Error adding profile:", error);
-      setError("Failed to add profile. Please try again later.");
-    } finally {
-      setActionLoading(false);
+      setError("");
+      // Only reset the form when it worked, so a failure keeps what was typed.
       setNewName("");
       setNewIsKids(false);
       setSelectedColor(AVATAR_COLORS[0]);
       setAdding(false);
+    } catch (error: any) {
+      console.error("Error adding profile:", error);
+      setError(
+        error.response?.data?.message ||
+          "Failed to add profile. Please try again later.",
+      );
+    } finally {
+      setActionLoading(false);
     }
   };
   const handleRemoveProfile = async (profileId: string) => {
@@ -398,5 +399,11 @@ const page = () => {
     </div>
   );
 };
+
+const page = () => (
+  <RequireAuth>
+    <ProfilesPage />
+  </RequireAuth>
+);
 
 export default page;

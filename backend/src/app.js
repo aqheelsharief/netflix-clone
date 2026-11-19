@@ -1,34 +1,48 @@
 import express from "express";
 import cors from "cors";
-import cookieParser from "cookie-parser";
 import authRoutes from "../routes/auth.routes.js";
 import profileRoutes from "../routes/profile.routes.js";
 import movieRoutes from "../routes/movie.routes.js";
 import watchlistRoutes from "../routes/watchlist.routes.js";
 import recommendationRoutes from "../routes/recommendation.routes.js";
-import path from "path";
-import { fileURLToPath } from "url";
+import { UPLOAD_ROOT } from "../config/paths.js";
+import { notFound, errorHandler } from "../middleware/error.middleware.js";
+
 const app = express();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+app.disable("x-powered-by");
+
+// CLIENT_URL can hold several origins separated by commas.
+// If it is not set (local dev), any origin is allowed.
+const allowedOrigins = (process.env.CLIENT_URL || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: "*",
+    origin: allowedOrigins.length ? allowedOrigins : "*",
   }),
 );
 
-app.use(express.json());
-
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/profiles", profileRoutes);
 app.use("/api/movies", movieRoutes);
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 app.use("/api/watchlist", watchlistRoutes);
 app.use("/api/recommendations", recommendationRoutes);
+
+// express.static already supports HTTP Range requests (video seeking).
+app.use(
+  "/uploads",
+  express.static(UPLOAD_ROOT, {
+    setHeaders: (res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    },
+  }),
+);
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -37,19 +51,7 @@ app.get("/", (req, res) => {
   });
 });
 
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Route not found",
-  });
-});
-
-app.use((err, req, res, next) => {
-  console.log(err);
-  res.status(err.statusCODE || 500).json({
-    success: false,
-    message: err.message || "Imternal server error",
-  });
-});
+app.use(notFound);
+app.use(errorHandler);
 
 export default app;

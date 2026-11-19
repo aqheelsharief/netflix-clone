@@ -28,14 +28,22 @@ axiosInstance.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response && error.response.status === 401) {
+    // A 401 from login/register just means "wrong credentials": show the
+    // error on the form instead of wiping storage and reloading the page.
+    const url = error.config?.url || "";
+    const isAuthRequest =
+      url.includes("/auth/login") || url.includes("/auth/register");
+
+    if (error.response && error.response.status === 401 && !isAuthRequest) {
       console.log("Unauthorized access - logging out");
       if (typeof window !== "undefined") {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         localStorage.removeItem("profiles");
         localStorage.removeItem("selectedProfile");
-        window.location.href = "/login";
+        if (window.location.pathname !== "/login") {
+          window.location.href = "/login";
+        }
       }
     }
     return Promise.reject(error);

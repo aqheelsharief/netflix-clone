@@ -4,45 +4,22 @@ import Footer from "@/components/Footer";
 import MovieDetailModal from "@/components/MovieDetailModal";
 import Navbar from "@/components/Navbar";
 
-import { allMovies, Movie } from "@/lib/movie";
+import { Movie } from "@/lib/movie";
+import { toMovie, type ApiMovie } from "@/lib/movieApi";
+import RequireAuth from "@/components/RequireAuth";
 import axiosInstance from "@/lib/axios";
 
 import { SearchIcon, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { Suspense, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/context/Authcontext";
-
-type ApiMovie = {
-  _id?: string;
-  id?: string;
-
-  title: string;
-  description: string;
-  longDescription?: string;
-
-  backdrop?: string;
-  poster?: string;
-
-  year: number;
-  rating: string;
-  duration: string;
-
-  genres: string[];
-  cast: string[];
-
-  match?: number;
-
-  isNew?: boolean;
-  isNewRelease?: boolean;
-  isTop10?: boolean;
-
-  videoUrl?: string;
-};
 
 const page = () => {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#141414]" />}>
-      <SearchPage />
+      <RequireAuth requireProfile>
+        <SearchPage />
+      </RequireAuth>
     </Suspense>
   );
 };
@@ -70,40 +47,6 @@ function SearchPage() {
     setQuery(q);
   }, [searchParams]);
 
-  const formatMovie = (movie: ApiMovie): Movie => {
-    return {
-      id: movie._id || movie.id || "",
-
-      title: movie.title,
-
-      description: movie.description,
-
-      longDescription: movie.longDescription || movie.description,
-
-      backdrop: movie.backdrop || "",
-
-      poster: movie.poster || "",
-
-      year: movie.year,
-
-      rating: movie.rating,
-
-      duration: movie.duration,
-
-      genres: movie.genres || [],
-
-      cast: movie.cast || [],
-
-      match: movie.match || 0,
-
-      isNew: movie.isNew ?? movie.isNewRelease ?? false,
-
-      isTop10: movie.isTop10 ?? false,
-
-      videoUrl: movie.videoUrl || "",
-    };
-  };
-
   useEffect(() => {
     const searchMovies = async () => {
       const searchQuery = query.trim();
@@ -121,9 +64,7 @@ function SearchPage() {
           },
         });
         const movies = response.data?.movies || response.data?.data || [];
-        const formattedMovies = movies.map((movie: ApiMovie) =>
-          formatMovie(movie),
-        );
+        const formattedMovies = movies.map((movie: ApiMovie) => toMovie(movie));
         setSearchResults(formattedMovies);
       } catch (error: any) {
         console.error("Search recommendation error:", error);
@@ -142,21 +83,9 @@ function SearchPage() {
     return () => clearTimeout(timer);
   }, [query, selectedProfile]);
 
-  const staticResults = useMemo(() => {
-    if (!query.trim()) return [];
-
-    const lower = query.toLowerCase();
-
-    return allMovies.filter(
-      (movie) =>
-        movie.title.toLowerCase().includes(lower) ||
-        movie.description.toLowerCase().includes(lower) ||
-        movie.genres.some((genre) => genre.toLowerCase().includes(lower)) ||
-        movie.cast.some((cast) => cast.toLowerCase().includes(lower)),
-    );
-  }, [query]);
-
-  const results = searchResults.length > 0 ? searchResults : staticResults;
+  // Only real results from the backend. (The old fallback showed fake mock
+  // movies whenever the API returned nothing.)
+  const results = searchResults;
 
   const handleSelectMovie = (movie: Movie) => {
     setSelectedMovie(movie);

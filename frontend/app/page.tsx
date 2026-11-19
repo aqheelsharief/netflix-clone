@@ -6,18 +6,21 @@ import { useEffect } from "react";
 
 export default function Home() {
   const router = useRouter();
-  const { user, selectedProfile } = useAuth();
+  const { user, selectedProfile, loading } = useAuth();
+
   useEffect(() => {
-    if (user) {
-      const params = new URLSearchParams({ p: selectedProfile?._id });
-      router.push(`/browse?${params.toString()}`);
-    } else router.push("/login");
-  }, [user, selectedProfile, router]);
+    // Wait until the saved login has been checked, otherwise a logged-in
+    // user is briefly "null" and gets sent to /login on every refresh.
+    if (loading) return;
+
+    if (!user) router.replace("/login");
+    else if (!selectedProfile) router.replace("/profiles");
+    else router.replace(`/browse?p=${selectedProfile._id}`);
+  }, [user, selectedProfile, loading, router]);
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen py-2">
-      <main className="flex flex-col items-center justify-center w-full flex-1 px-20 text-center">
-        Loading...
-      </main>
+    <div className="min-h-screen bg-[#141414] flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-white/20 border-t-red-600 rounded-full animate-spin" />
     </div>
   );
 }

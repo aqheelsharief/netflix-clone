@@ -1,5 +1,36 @@
 import Profile from "../models/Profile.js";
 
+const MATURITY_LEVELS = ["All", "7+", "13+", "16+", "18+"];
+
+// Returns an error message, or null when everything is fine.
+const validateProfileFields = ({
+  name,
+  avatar,
+  isKids,
+  language,
+  maturityLevel,
+}) => {
+  if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+    return "Profile name is required";
+  }
+  if (typeof name === "string" && name.trim().length > 30) {
+    return "Profile name cannot exceed 30 characters";
+  }
+  if (avatar !== undefined && typeof avatar !== "string") {
+    return "Avatar must be a string";
+  }
+  if (isKids !== undefined && typeof isKids !== "boolean") {
+    return "isKids must be true or false";
+  }
+  if (language !== undefined && typeof language !== "string") {
+    return "Language must be a string";
+  }
+  if (maturityLevel !== undefined && !MATURITY_LEVELS.includes(maturityLevel)) {
+    return `Maturity level must be one of: ${MATURITY_LEVELS.join(", ")}`;
+  }
+  return null;
+};
+
 export const getProfiles = async (req, res) => {
   try {
     const profiles = await Profile.find({
@@ -62,12 +93,20 @@ export const createProfile = async (req, res) => {
       isKids = false,
       language = "English",
       maturityLevel = "All",
-    } = req.body;
+    } = req.body ?? {};
 
-    if (!name || !name.trim()) {
+    const validationError = validateProfileFields({
+      name: name ?? "",
+      avatar,
+      isKids,
+      language,
+      maturityLevel,
+    });
+
+    if (validationError) {
       return res.status(400).json({
         success: false,
-        message: "Profile name is required",
+        message: validationError,
       });
     }
 
@@ -104,7 +143,8 @@ export const createProfile = async (req, res) => {
       avatar,
       isKids,
       language,
-      maturityLevel,
+      // Kids profiles are always limited to 7+
+      maturityLevel: isKids ? "7+" : maturityLevel,
     });
 
     return res.status(201).json({
@@ -126,7 +166,22 @@ export const updateProfile = async (req, res) => {
   try {
     const { profileId } = req.params;
 
-    const { name, avatar, isKids, language, maturityLevel } = req.body;
+    const { name, avatar, isKids, language, maturityLevel } = req.body ?? {};
+
+    const validationError = validateProfileFields({
+      name,
+      avatar,
+      isKids,
+      language,
+      maturityLevel,
+    });
+
+    if (validationError) {
+      return res.status(400).json({
+        success: false,
+        message: validationError,
+      });
+    }
 
     const profile = await Profile.findOne({
       _id: profileId,
@@ -182,6 +237,11 @@ export const updateProfile = async (req, res) => {
 
     if (maturityLevel !== undefined) {
       profile.maturityLevel = maturityLevel;
+    }
+
+    // Kids profiles are always limited to 7+
+    if (profile.isKids) {
+      profile.maturityLevel = "7+";
     }
 
     await profile.save();

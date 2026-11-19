@@ -128,3 +128,60 @@
     @apply font-sans;
   }
 }
+
+
+/* ------------------------------------------------------------------
+   Custom utilities used by the Netflix-style components.
+   (These were missing, so the hero gradient, row edge fades, hidden
+   scrollbars and fade animations were silently not applied.)
+------------------------------------------------------------------- */
+
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility hero-gradient {
+  background:
+    linear-gradient(to top, #141414 0%, rgba(20, 20, 20, 0.6) 25%, transparent 55%),
+    linear-gradient(to right, rgba(0, 0, 0, 0.75) 0%, transparent 60%);
+}
+
+@utility row-fade-left {
+  background: linear-gradient(to right, #141414, transparent);
+}
+
+@utility row-fade-right {
+  background: linear-gradient(to left, #141414, transparent);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-fade-in {
+  animation: fade-in 0.2s ease-out both;
+}
+
+@utility animate-fade-in-up {
+  animation: fade-in-up 0.6s ease-out both;
+}

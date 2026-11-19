@@ -49,11 +49,6 @@ const page = () => {
       setLoading(false);
       return;
     }
-    if (password.length < 4) {
-      setError("Password must be at least 4 characters long.");
-      setLoading(false);
-      return;
-    }
     // setTimeout(() => {
     //   router.push("/profiles");
     //   setLoading(false);
@@ -91,13 +86,14 @@ const page = () => {
       setError("Please enter your name.");
       return;
     }
-    if (!password || password.length < 4) {
-      setError("Password must be at least 4 characters long.");
+    if (!password || password.length < 6) {
+      setError("Password must be at least 6 characters long.");
       return;
     }
     // setTimeout(() => {
     //   router.push("/profiles");
     // }, 800);
+    setLoading(true);
     try {
       const result = await signup(name, email, password);
       if (result.success) {
