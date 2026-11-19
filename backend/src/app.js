@@ -12,6 +12,9 @@ const app = express();
 
 app.disable("x-powered-by");
 
+// Behind Render/Vercel proxies: use the real client IP (needed for rate limiting).
+app.set("trust proxy", 1);
+
 // CLIENT_URL can hold several origins separated by commas.
 // If it is not set (local dev), any origin is allowed.
 const allowedOrigins = (process.env.CLIENT_URL || "")
